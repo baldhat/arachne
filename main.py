@@ -1,13 +1,9 @@
-from MainWindow import Window
-from connection.connector import Connector
+from widgets.MainWindow import Window
 
 
 if __name__ == '__main__':
-    connector = Connector('COM8', 115200)
+    app = Window()
 
-    app = Window(connector)
-
-    while app.isAlive:
-        app.tick()
+    app.tick()
 
 

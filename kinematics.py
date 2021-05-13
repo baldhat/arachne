@@ -1,5 +1,5 @@
 import numpy as np
-from math import cos, sin, pi
+from math import cos, sin, pi, atan, sqrt, acos
 
 
 class Kinematics:
@@ -28,14 +28,15 @@ class Kinematics:
     ]
 
     def __init__(self):
-        pass
+        self.last_angles = []
+        self.last_positions = []
 
     def dhToMatrix(self, d, theta, r, alpha):
         return np.array([
             [cos(theta), -sin(theta) * cos(alpha), sin(theta) * sin(alpha), r * cos(theta)],
             [sin(theta), cos(theta) * cos(alpha), -cos(theta) * sin(alpha), r * sin(theta)],
-            [0,          sin(alpha),               cos(alpha),              d],
-            [0, 0, 0, 1]
+            [0,          sin(alpha),               cos(alpha),                 d          ],
+            [0,            0,                       0,                         1          ]
         ])
 
     def relToReal(self, vals):
@@ -54,57 +55,164 @@ class Kinematics:
     def absToRel(self, i, abso):
         return round((abso - self.mins[i]) / (self.maxs[i] - self.mins[i]), 2)
 
-    def toRad(self, vals):
+    def realToRad(self, vals):
         return np.array([x * 0.0174533 for x in vals])
 
+    def radToRel(self, vals):
+        return self.realToRel(np.array([x / 0.0174533 for x in vals]))
+
+    def neutral_pos_endpoints(self):
+        endpoints = self.forward([0.5, 0.5, 0.5, 0.5, 0.8, 0.8, 0.8, 0.8, 0.03, 0.03, 0.03, 0.03])
+        return [endpoints[4], endpoints[8], endpoints[12], endpoints[16]]
+
+    def shift_point_of_mass(self, x, y, z):
+        endpoints = self.neutral_pos_endpoints()
+        leg1_pos = [endpoints[0][0] - x, endpoints[0][1] - y, -z]
+        leg2_pos = [endpoints[1][0] - x, endpoints[1][1] - y, -z]
+        leg3_pos = [endpoints[2][0] - x, endpoints[2][1] - y, -z]
+        leg4_pos = [endpoints[3][0] - x, endpoints[3][1] - y, -z]
+
+        return self.inverse_kinematics([leg1_pos, leg2_pos, leg3_pos, leg4_pos])
+
+    def inverse_kinematics(self, leg_endpoints):
+        leg1_pos = leg_endpoints[0]
+        leg2_pos = leg_endpoints[1]
+        leg3_pos = leg_endpoints[2]
+        leg4_pos = leg_endpoints[3]
+
+        # Offset by the starting point of the leg
+        leg1_pos_rel = leg1_pos - self.last_positions[1]
+        leg2_pos_rel = leg2_pos - self.last_positions[5]
+        leg3_pos_rel = leg3_pos - self.last_positions[9]
+        leg4_pos_rel = leg4_pos - self.last_positions[13]
+
+        leg1_theta1 = atan(- leg1_pos_rel[0] / leg1_pos_rel[1])
+        leg2_theta1 = atan(- leg2_pos_rel[1] / - leg2_pos_rel[0])
+        leg3_theta1 = atan(leg3_pos_rel[0] / - leg3_pos_rel[1])
+        leg4_theta1 = atan(leg4_pos_rel[1] / leg4_pos_rel[0])
+
+        # Offset by the starting point of the arm / end of shoulder
+        leg1_arm_offset = np.array([ cos(leg1_theta1 + pi/2) * 0.5, sin(leg1_theta1 + pi/2) * 0.5, 0]) + self.last_positions[1]
+
+        leg1_p = sqrt((leg1_pos[0] - leg1_arm_offset[0])**2 + (leg1_pos[1] - leg1_arm_offset[1])**2)
+        leg1_L = sqrt(leg1_p**2 + leg1_pos[2]**2)
+        if leg1_L > 1.35 + 2.07:
+            print(leg1_L, "out of range")
+            return self.last_angles
+        leg1_theta2 = acos((1.35 ** 2 + leg1_L ** 2 - 2.07 ** 2) / (2 * 1.35 * leg1_L)) - atan(-leg1_pos[2] / leg1_p)
+        leg1_theta3 = acos(((1.35**2 + 2.07**2 - leg1_L**2 ) / (2*1.35*2.07))) + pi * 1.26
+        if leg1_theta3 > pi:
+            leg1_theta3 -= 2 * pi
+
+        # Offset by the starting point of the arm / end of shoulder
+        leg2_arm_offset = np.array([ cos(leg2_theta1 + pi) * 0.5, sin(leg2_theta1 + pi) * 0.5, 0]) + self.last_positions[5]
+
+        leg2_p = sqrt((leg2_pos[0] - leg2_arm_offset[0]) ** 2 + (leg2_pos[1] - leg2_arm_offset[1]) ** 2)
+        leg2_L = sqrt(leg2_p ** 2 + leg2_pos[2] ** 2)
+        if leg2_L > 1.35 + 2.07:
+            print("out of range")
+            return self.last_angles
+        leg2_theta2 = acos((1.35 ** 2 + leg2_L ** 2 - 2.07 ** 2) / (2 * 1.35 * leg2_L)) - atan(-leg2_pos[2] / leg2_p)
+        leg2_theta3 = acos(((1.35 ** 2 + 2.07 ** 2 - leg2_L ** 2) / (2 * 1.35 * 2.07))) + pi * 1.26
+        if leg2_theta3 > pi:
+            leg2_theta3 -= 2 * pi
+
+        ########### LEG 3 ###############
+        # Offset by the starting point of the arm / end of shoulder
+        leg3_arm_offset = np.array([cos(leg3_theta1 + 1.5 * pi) * 0.5, sin(leg3_theta1 + 1.5 * pi) * 0.5, 0]) + \
+                          self.last_positions[9]
+
+        leg3_p = sqrt((leg3_pos[0] - leg3_arm_offset[0]) ** 2 + (leg3_pos[1] - leg3_arm_offset[1]) ** 2)
+        leg3_L = sqrt(leg3_p ** 2 + leg3_pos[2] ** 2)
+        if leg3_L > 1.35 + 2.07:
+            print("out of range")
+            return self.last_angles
+        leg3_theta2 = acos((1.35 ** 2 + leg3_L ** 2 - 2.07 ** 2) / (2 * 1.35 * leg3_L)) - atan(
+            -leg3_pos[2] / leg3_p)
+        leg3_theta3 = acos(((1.35 ** 2 + 2.07 ** 2 - leg3_L ** 2) / (2 * 1.35 * 2.07))) + pi * 1.26
+        if leg3_theta3 > pi:
+            leg3_theta3 -= 2 * pi
+
+        ########### LEG 4 ###############
+        # Offset by the starting point of the arm / end of shoulder
+        leg4_arm_offset = np.array([cos(leg4_theta1 ) * 0.5, sin(leg4_theta1 ) * 0.5, 0]) + \
+                          self.last_positions[13]
+
+        leg4_p = sqrt((leg4_pos[0] - leg4_arm_offset[0]) ** 2 + (leg4_pos[1] - leg4_arm_offset[1]) ** 2)
+        leg4_L = sqrt(leg4_p ** 2 + leg4_pos[2] ** 2)
+        if leg4_L > 1.35 + 2.07:
+            print("out of range")
+            return self.last_angles
+        leg4_theta2 = acos((1.35 ** 2 + leg4_L ** 2 - 2.07 ** 2) / (2 * 1.35 * leg4_L)) - atan(
+            -leg4_pos[2] / leg4_p)
+        leg4_theta3 = acos(((1.35 ** 2 + 2.07 ** 2 - leg4_L ** 2) / (2 * 1.35 * 2.07))) + pi * 1.26
+        if leg4_theta3 > pi:
+            leg4_theta3 -= 2 * pi
+
+        shoulders = self.radToRel([leg1_theta1, leg2_theta1, leg3_theta1, leg4_theta1])
+
+        angles = self.last_angles
+        angles[0:4] = shoulders
+        angles[4:8] = self.radToRel([leg1_theta2, leg2_theta2, leg3_theta2, leg4_theta2])
+        angles[8:12] = self.radToRel([leg1_theta3, leg2_theta3, leg3_theta3, leg4_theta3])
+
+        for i, angle in enumerate(angles):
+            if angle < 0:
+                angles[i] = 0
+                print("Relative position too small")
+            elif angle > 1:
+                angles[i] = 1
+                print("Relative position too big")
+
+        return angles
+
+    def inverse_leg(self, leg_endpoint_coords, leg):
+        last_endpoints = [self.last_positions[4], self.last_positions[8], self.last_positions[12], self.last_positions[16]]
+        last_endpoints[leg] = np.array(leg_endpoint_coords)
+        return self.inverse_kinematics(last_endpoints)
+
     def forward(self, relJointAngles):
+        self.last_angles = np.copy(relJointAngles)
         realAngles = self.relToReal(relJointAngles)
-        radAngles = self.toRad(realAngles)
+        radAngles = self.realToRad(realAngles)
 
-        rotOff1 = pi/2
-        t11 = self.dhToMatrix(0, radAngles[0] + rotOff1, 0.5, pi / 2)
-        t12 = self.dhToMatrix(0, radAngles[4], 1.35, 0)
-        t13 = self.dhToMatrix(0, radAngles[8], 2.07, 0)
+        j10, j11, j12, j13 = self.leg1Forward(radAngles)
 
-        j10 = np.array([0, 0.2, 0])
-        j11 = j10 + [t11[0, 3], t11[1,3], t11[2,3]]
-        j12 = j10 + [(t11@t12)[0,3], (t11@t12)[1,3], (t11@t12)[2,3]]
-        j13 = j10 + [(t11@t12@t13)[0,3], (t11@t12@t13)[1,3], (t11@t12@t13)[2,3]]
+        j20, j21, j22, j23 = self.leg2forward(radAngles)
 
-        rotOff2 = pi
-        t21 = self.dhToMatrix(0, radAngles[1] + rotOff2, 0.5, pi / 2)
-        t22 = self.dhToMatrix(0, radAngles[5], 1.35, 0)
-        t23 = self.dhToMatrix(0, radAngles[9], 2.07, 0)
+        j30, j31, j32, j33 = self.leg3forward(radAngles)
 
-        j20 = np.array([-0.2, 0, 0])
-        j21 = j20 + [t21[0, 3], t21[1, 3], t21[2, 3]]
-        j22 = j20 + [(t21 @ t22)[0, 3], (t21 @ t22)[1, 3], (t21 @ t22)[2, 3]]
-        j23 = j20 + [(t21 @ t22 @ t23)[0, 3], (t21 @ t22 @ t23)[1, 3], (t21 @ t22 @ t23)[2, 3]]
+        j40, j41, j42, j43 = self.leg4forward(radAngles)
 
-        rotOff2 = - pi / 2
-        t31 = self.dhToMatrix(0, radAngles[2] + rotOff2, 0.5, pi / 2)
-        t32 = self.dhToMatrix(0, radAngles[6], 1.35, 0)
-        t33 = self.dhToMatrix(0, radAngles[10], 2.07, 0)
-
-        j30 = np.array([0, -0.2, 0])
-        j31 = j30 + [t31[0, 3], t31[1, 3], t31[2, 3]]
-        j32 = j30 + [(t31 @ t32)[0, 3], (t31 @ t32)[1, 3], (t31 @ t32)[2, 3]]
-        j33 = j30 + [(t31 @ t32 @ t33)[0, 3], (t31 @ t32 @ t33)[1, 3], (t31 @ t32 @ t33)[2, 3]]
-
-        rotOff2 = 0
-        t41 = self.dhToMatrix(0, radAngles[3] + rotOff2, 0.5, pi / 2)
-        t42 = self.dhToMatrix(0, radAngles[7], 1.35, 0)
-        t43 = self.dhToMatrix(0, radAngles[11], 2.07, 0)
-
-        j40 = np.array([0.2, 0, 0])
-        j41 = j40 + [t41[0, 3], t41[1, 3], t21[2, 3]]
-        j42 = j40 + [(t41 @ t42)[0, 3], (t41 @ t42)[1, 3], (t41 @ t42)[2, 3]]
-        j43 = j40 + [(t41 @ t42 @ t43)[0, 3], (t41 @ t42 @ t43)[1, 3], (t41 @ t42 @ t43)[2, 3]]
-
-        return [[0, 0, 0],
+        self.last_positions = [[0, 0, 0],
                 j10, j11, j12, j13,
                 j20, j21, j22, j23,
                 j30, j31, j32, j33,
                 j40, j41, j42, j43
         ]
+
+        return self.last_positions
+
+    def legForward(self, rotOff, theta1, theta2, theta3, offset):
+        t41 = self.dhToMatrix(0, theta1 + rotOff, 0.5, pi / 2)
+        t42 = self.dhToMatrix(0, theta2, 1.35, 0)
+        t43 = self.dhToMatrix(0, theta3, 2.07, 0)
+        j41 = offset + [t41[0, 3], t41[1, 3], t41[2, 3]]
+        joint2 = t41 @ t42
+        joint3 = t41 @ t42 @ t43
+        j42 = offset + [joint2[0, 3], joint2[1, 3], joint2[2, 3]]
+        j43 = offset + [joint3[0, 3], joint3[1, 3], joint3[2, 3]]
+        return offset, j41, j42, j43
+
+    def leg4forward(self, radAngles):
+        return self.legForward(0, radAngles[3], radAngles[7], radAngles[11], np.array([0.2, 0, 0]))
+
+    def leg3forward(self, radAngles):
+        return self.legForward(-pi / 2, radAngles[2], radAngles[6], radAngles[10], np.array([0, -0.2, 0]))
+
+    def leg2forward(self, radAngles):
+        return self.legForward(pi, radAngles[1], radAngles[5], radAngles[9], np.array([-0.2, 0, 0]))
+
+    def leg1Forward(self, radAngles):
+        return self.legForward(pi / 2, radAngles[0], radAngles[4], radAngles[8], np.array([0, 0.2, 0]))
 

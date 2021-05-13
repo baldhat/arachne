@@ -5,6 +5,8 @@ from PyQt5.QtWidgets import *
 
 from connection.observer import StateObserver
 from widgets.angles import AnglesWidget
+from widgets.legs import LegWidget
+from widgets.stances import StancesWidget
 
 
 class StatsWidget(QWidget, StateObserver):
@@ -13,6 +15,7 @@ class StatsWidget(QWidget, StateObserver):
         self.parent = parent
         self.connector = self.parent.connector
         self.connector.registerState(self)
+        self.movementService = parent.movementService
 
         self.setAutoFillBackground(True)
         p = self.palette()
@@ -30,6 +33,12 @@ class StatsWidget(QWidget, StateObserver):
 
         self.angles = AnglesWidget(self)
         layout.addWidget(self.angles)
+
+        self.legs = LegWidget(self)
+        layout.addWidget(self.legs)
+
+        self.stances = StancesWidget(self)
+        layout.addWidget(self.stances)
 
         layout.addStretch()
         self.setLayout(layout)
