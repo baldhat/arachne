@@ -3,8 +3,6 @@ from PyQt5.QtWidgets import *
 import time
 from PyQt5.QtCore import Qt
 
-from movement_service import MovementService
-
 
 class StancesWidget(QWidget):
     def __init__(self, parent):
@@ -113,7 +111,7 @@ class StancesWidget(QWidget):
 
     def forward(self):
         self.movementService.forward()
-        self.movementService.nextMove()
+        # self.movementService.nextMove()
 
     def stop(self):
         self.movementService.stop()

@@ -54,8 +54,8 @@ class Window(QtWidgets.QMainWindow):
         while self.isAlive:
             if self.connector.has_connection():
                 self.connector.checkForData()
-            # if self.movementService.hasMove():
-            #     self.movementService.nextMove()
+            if self.movementService.hasMove():
+                self.movementService.nextMove()
             self.update()
             self.app.processEvents()
 
